@@ -16,7 +16,8 @@ namespace ClientName
     using System.Text.RegularExpressions;
     using System.Threading;
     using System.Windows.Forms;
-
+    using System.Management.Automation;
+    using System.Collections.ObjectModel;
     using Microsoft.Win32;
 
     #region Enumerations
@@ -154,8 +155,8 @@ namespace ClientName
         static int _setClientNameRetry = 0;
         static ArrayList _StartupCommands = new ArrayList();
         static string _volatileEnvironmentNameRegPath = "HKEY_CURRENT_USER\\Volatile Environment";
+        static bool _usePowerShell = false;
         private static string _clientAddressName = "ClientAddress";
-
         #endregion Fields
 
         #region Methods
@@ -178,7 +179,6 @@ namespace ClientName
         /// <param name="m">Message</param>
         protected override void WndProc(ref Message m)
         {
-
             if (m.Msg == WTS_SESSION_NOTIFICATION.WM_WTSSESSION_CHANGE)
             {
                 WriteOutput(string.Format("WndProc:Received WM_WTSSESSION_CHANGE:{0}",m.WParam.ToInt32()));
@@ -287,7 +287,6 @@ namespace ClientName
         /// <param name="commands">ArrayList of command strings.</param>
         private static void ProcessCommands(ArrayList commands)
         {
-            
             try
             {
                 WriteOutput("ProcessCommands:enter:");
@@ -300,55 +299,71 @@ namespace ClientName
 
                 foreach (string cmd in commands)
                 {
-                    WriteOutput("ProcessCommands command:" + cmd);
                     if (cmd.Trim().Length < 1) continue;
 
-                    List<string> args = new List<string>();
-                    args.AddRange(cmd.Split(new char[] { ' ' }));
-
-                    //looking for quoted strings
-                    re = new Regex("(^\".*\")|(.*)");
-                    MatchCollection reMatch = re.Matches(cmd);
-                    re = new Regex("\"");
-                    cleancmd = re.Replace(reMatch[0].ToString(), "");
-                    cleanarg = re.Replace(reMatch[1].ToString(), "");
-
-                    //if file found from quoted string, set command to file and rest as argument
-                    if (File.Exists(cleancmd))
+                    if (_usePowerShell)
                     {
-                        command = cleancmd;
-                        arguments = cleanarg;
+                        re = new Regex("(^\".*\")");
+                        MatchCollection reMatch = re.Matches(cmd);
+                        re = new Regex("\"");
+                        command = re.Replace(reMatch[0].ToString(), "");
+
+                        //if nothing found then default to first arg
+                        if (command != string.Empty)
+                        {
+                            bool ret = RunPowershellCommand(command);
+                        }
                     }
                     else
                     {
-                        //file not found in quoted string
-                        foreach (string arg in args)
-                        {
-                            cleanarg = arg.Replace("\"", "");
-                            cleanarg = cleanarg.Replace("\\\\", "\\");
+                        List<string> args = new List<string>();
+                        args.AddRange(cmd.Split(new char[] { ' ' }));
 
-                            if (cleanarg != string.Empty && File.Exists(cleanarg) && !commandset)
+                        //looking for quoted strings
+                        re = new Regex("(^\".*\")|(.*)");
+                        MatchCollection reMatch = re.Matches(cmd);
+                        re = new Regex("\"");
+                        cleancmd = re.Replace(reMatch[0].ToString(), "");
+                        cleanarg = re.Replace(reMatch[1].ToString(), "");
+
+                        //if file found from quoted string, set command to file and rest as argument
+                        if (File.Exists(cleancmd))
+                        {
+                            command = cleancmd;
+                            arguments = cleanarg;
+                        }
+                        else
+                        {
+                            //file not found in quoted string
+                            foreach (string arg in args)
                             {
-                                command = cleanarg;
-                                commandset = true;
-                            }
-                            else
-                            {
-                                arguments = arguments + " " + cleanarg;
+                                cleanarg = arg.Replace("\"", "");
+                                cleanarg = cleanarg.Replace("\\\\", "\\");
+
+                                if (cleanarg != string.Empty && File.Exists(cleanarg) && !commandset)
+                                {
+                                    command = cleanarg;
+                                    commandset = true;
+                                }
+                                else
+                                {
+                                    arguments = arguments + " " + cleanarg;
+                                }
                             }
                         }
+
+                        //if nothing found then default to first arg
+                        if (command == string.Empty && args.Count > 0)
+                        {
+                            command = args[0].ToString();
+                            args.Remove(args[0]);
+                            arguments = String.Join(" ", args.ToArray());
+                        }
+
+                        //run command
+                        bool ret = RunCommand(command, arguments, false);
                     }
 
-                    //if nothing found then default to first arg
-                    if (command == string.Empty && args.Count > 0)
-                    {
-                        command = args[0].ToString();
-                        args.Remove(args[0]);
-                        arguments = String.Join(" ", args.ToArray());
-                    }
-
-                    //run command
-                    bool ret = RunCommand(command, arguments, false);
                     arguments = string.Empty;
                     command = string.Empty;
                     commandset = false;
@@ -407,7 +422,6 @@ namespace ClientName
                 WriteOutput(string.Format("Disconnect:passthrough sessions detected:{0}", processlistCount.ToString()));
                 if (_connectEvent && _enablePassthroughCommands && processlistCount > 0)
                 {
-
                     ProcessCommands(_PassthroughDisconnectCommands);
                     WriteRegValue(_hkcuConfigurationKey, _previousSessionsName, "1", RegistryValueKind.String, true);
                 }
@@ -566,6 +580,16 @@ namespace ClientName
                     }
                 }
 
+                val = ReadRegValue(_hklmConfigurationKey, "UsePS").ToString();
+                if (val != string.Empty && val == "1" | val.ToLower() == "true")
+                {
+                    _usePowerShell = true;
+                }
+                else
+                {
+                    _usePowerShell = false;
+                }
+
                 string hklm = ReadRegValue(_hklm, _clientnameName).ToString();
                 string hkcu = ReadRegValue(_hklm, _clientnameName).ToString();
 
@@ -693,7 +717,7 @@ namespace ClientName
                 }
 
                 bool ret = process.Start();
-                WriteOutput(string.Format("Command return: {0}",ret));
+                WriteOutput(string.Format("Command return: {0}", ret));
 
                 //get results if wait is true
                 if (wait)
@@ -711,6 +735,105 @@ namespace ClientName
             catch (Exception e)
             {
                 WriteOutput(string.Format("RunCommand error:{0}", e.ToString()));
+                return false;
+            }
+            finally
+            {
+
+            }
+        }
+
+        /// <summary>
+        /// runs specified command in the powershell runspace
+        /// </summary>
+        /// <param name="command">command to execute</param>
+        /// <returns>returns true if successful</returns>
+        private static bool RunPowershellCommand(string command)
+        {
+            try
+            {
+                bool ret = false;
+                using (PowerShell PowerShellInstance = PowerShell.Create())
+                {
+                    // use "AddScript" to add the contents of a script file to the end of the execution pipeline.
+                    // use "AddCommand" to add individual commands/cmdlets to the end of the execution pipeline.
+                    WriteOutput(string.Format("Starting pipeline:{0}", command));
+                    PowerShellInstance.AddScript(command);
+
+                    // prepare a new collection to store output stream objects
+                    PSDataCollection<PSObject> outputCollection = new PSDataCollection<PSObject>();
+                    outputCollection.DataAdded += outputCollection_DataAdded;
+
+                    // the streams (Error, Debug, Progress, etc) are available on the PowerShell instance.
+                    // we can review them during or after execution.
+                    // we can also be notified when a new item is written to the stream (like this):
+                    PowerShellInstance.Streams.Error.DataAdded += Error_DataAdded;
+
+                    IAsyncResult result = PowerShellInstance.BeginInvoke<PSObject, PSObject>(null, outputCollection);
+                    WriteOutput("Started pipeline");
+
+                    // do something else until execution has completed.
+                    // this could be sleep/wait, or perhaps some other work
+                    while (result.IsCompleted == false)
+                    {
+                        WriteOutput("Waiting for pipeline to finish");
+                        Thread.Sleep(1000);
+
+                        // might want to place a timeout here...
+                    }
+
+                    WriteOutput(string.Format("Execution has stopped. The pipeline state:{0}", PowerShellInstance.InvocationStateInfo.State.ToString()));
+
+                    WriteOutput(string.Format("RunPowershellCommand output:{0}", outputCollection.ToString()));
+
+                    WriteOutput("RunPowershellCommand output:");
+                    foreach (PSObject outputItem in outputCollection)
+                    {
+                        WriteOutput(outputItem.BaseObject.ToString());
+                    }
+ 
+                    // check the other output streams (for example, the error stream)
+                    if (PowerShellInstance.Streams.Error.Count > 0)
+                    {
+                        ret = false;
+                    }
+                    else
+                    {
+                        ret = true;
+                    }
+
+                    WriteOutput("Powershell pipeline done");
+                }
+
+                /// <summary>
+                /// Event handler for when data is added to the output stream.
+                /// </summary>
+                /// <param name="sender">Contains the complete PSDataCollection of all output items.</param>
+                /// <param name="e">Contains the index ID of the added collection item and the ID of the PowerShell instance this event belongs to.</param>
+                void outputCollection_DataAdded(object sender, DataAddedEventArgs e)
+                {
+                    // do something when an object is written to the output stream
+                    //WriteOutput(string.Format("RunPowershellCommand output:{0}", e.ToString()));
+                }
+
+                /// <summary>
+                /// Event handler for when Data is added to the Error stream.
+                /// </summary>
+                /// <param name="sender">Contains the complete PSDataCollection of all error output items.</param>
+                /// <param name="e">Contains the index ID of the added collection item and the ID of the PowerShell instance this event belongs to.</param>
+                void Error_DataAdded(object sender, DataAddedEventArgs e)
+                {
+                    // do something when an error is written to the error stream
+                    PSDataCollection<ErrorRecord> records = sender as PSDataCollection<ErrorRecord>;
+                    ErrorRecord record = records[e.Index];
+                    WriteOutput(string.Format("RunPowershellCommand error:{0}", record.Exception.Message));
+                }
+
+                return ret;
+            }
+            catch (Exception e)
+            {
+                WriteOutput(string.Format("RunPowershellCommand error:{0}", e.ToString()));
                 return false;
             }
             finally
@@ -862,22 +985,21 @@ namespace ClientName
         {
             try
             {
-                    if (Registry.GetValue(key, valueName, null) == null)
+                if (Registry.GetValue(key, valueName, null) == null)
+                {
+                    WriteOutput(string.Format("Key does not exist:{0}", key));
+
+                    if (create)
                     {
-                        WriteOutput(string.Format("Key does not exist:{0}", key));
-
-                        if (create)
-                        {
-                            WriteOutput(string.Format("Creating Key:{0}", key));
-                            Registry.SetValue(key, valueName, value, valueKind);
-                        }
-                        else
-                        {
-                            WriteOutput(string.Format("Key will not be written:{0}", key));
-                            return (string.Empty);
-                        }
-
+                        WriteOutput(string.Format("Creating Key:{0}", key));
+                        Registry.SetValue(key, valueName, value, valueKind);
                     }
+                    else
+                    {
+                        WriteOutput(string.Format("Key will not be written:{0}", key));
+                        return (string.Empty);
+                    }
+                }
 
                 WriteOutput(string.Format("Writing value:{0}\\{1}:{2}", key, valueName, value));
                 if (valueKind == RegistryValueKind.MultiString)
