@@ -3,6 +3,7 @@ This Session State Monitor allows for using Powershell instead of an exe. Just u
 HKEY_LOCAL_MACHINE\SOFTWARE\Citrix\SessionStateMonitor
 
 or the following key for x64:
+
 HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432node\Citrix\SessionStateMonitor
 And instead of whatever.exe, you can use "set-whatever -dostuff". 
 Be aware: it is running a x86 powershell runspace!
