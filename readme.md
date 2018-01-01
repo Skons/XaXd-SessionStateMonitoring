@@ -8,7 +8,7 @@ HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432node\Citrix\SessionStateMonitor
 
 And instead of whatever.exe, you can use "set-whatever -dostuff". 
 
-Be aware: it is running a x86 powershell runspace, though it will load x64 powershell modules.
+Be aware: it is running a x86 powershell runspace, though it will load x64 powershell modules. 
 
 # XenApp/XenDesktop Session State Monitor
 The Session State Monitor Utility actively monitors remote connections and disconnections in the session for which it’s running. The utility provides the ability to specify custom commands for Disconnect, Reconnect, and Startup. The utility also has the ability to allow the endpoint (client) name to smooth roam in double-hop sessions to the second hop. The utility does this by disconnecting the session from first hop to second hop, updating the appropriate registry key for ‘clientname’, and then reconnecting the disconnected first hop to second hop session.
