@@ -183,15 +183,19 @@ namespace ClientName
             {
                 WriteOutput(string.Format("WndProc:Received WM_WTSSESSION_CHANGE:{0}",m.WParam.ToInt32()));
                 int value = m.WParam.ToInt32();
-                if (value == WTS_SESSION_NOTIFICATION.WTS_CONSOLE_DISCONNECT
-                    || value == WTS_SESSION_NOTIFICATION.WTS_REMOTE_DISCONNECT)
+                if (value == WTS_SESSION_NOTIFICATION.WTS_CONSOLE_DISCONNECT || value == WTS_SESSION_NOTIFICATION.WTS_REMOTE_DISCONNECT)
                 {
+                    WriteOutput("ProcessEvent: disconnect");
                     ProcessEvent(WF_CONNECTSTATE_CLASS.WFDisconnected);
                 }
-                else if (value == WTS_SESSION_NOTIFICATION.WTS_CONSOLE_CONNECT
-                    || value == WTS_SESSION_NOTIFICATION.WTS_REMOTE_CONNECT)
+                else if (value == WTS_SESSION_NOTIFICATION.WTS_CONSOLE_CONNECT || value == WTS_SESSION_NOTIFICATION.WTS_REMOTE_CONNECT)
                 {
+                    WriteOutput("ProcessEvent: connect");
                     ProcessEvent(WF_CONNECTSTATE_CLASS.WFConnected);
+                }
+                else
+                {
+                    WriteOutput("ProcessEvent: none");
                 }
 
             }
@@ -382,6 +386,7 @@ namespace ClientName
         /// <returns>false if event was bypassed.</returns>
         private static bool ProcessEvent(WF_CONNECTSTATE_CLASS wfMessage)
         {
+            WriteOutput("ProcessEvent:enter:");
             //see if client name changed
             WFSession wfcurrentsession = QuerySessionInformation();
 
@@ -758,6 +763,8 @@ namespace ClientName
                     // use "AddScript" to add the contents of a script file to the end of the execution pipeline.
                     // use "AddCommand" to add individual commands/cmdlets to the end of the execution pipeline.
                     WriteOutput(string.Format("Starting pipeline:{0}", command));
+                    //add the x64 modules
+                    PowerShellInstance.AddScript("$env:PSModulePath += ';c:\\Program Files\\WindowsPowershell\\Modules'");
                     PowerShellInstance.AddScript(command);
 
                     // prepare a new collection to store output stream objects
