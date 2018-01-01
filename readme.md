@@ -1,6 +1,7 @@
 # Session State Monitor with PS capabilities
 This Session State Monitor allows for using Powershell instead of an exe. Just use PS=1 in the Session State Monitor registry:
 HKEY_LOCAL_MACHINE\SOFTWARE\Citrix\SessionStateMonitor
+
 or the following key for x64:
 HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432node\Citrix\SessionStateMonitor
 And instead of whatever.exe, you can use "set-whatever -dostuff". 
