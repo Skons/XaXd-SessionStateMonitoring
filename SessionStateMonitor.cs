@@ -765,6 +765,11 @@ namespace ClientName
                     WriteOutput(string.Format("Starting pipeline:{0}", command));
                     //add the x64 modules
                     PowerShellInstance.AddScript("$env:PSModulePath += ';c:\\Program Files\\WindowsPowershell\\Modules'");
+
+                    //set the executionpolicy
+                    PowerShellInstance.AddScript("set-executionpolicy -ExecutionPolicy Bypass -Scope Process -force");
+
+                    //add the command
                     PowerShellInstance.AddScript(command);
 
                     // prepare a new collection to store output stream objects
